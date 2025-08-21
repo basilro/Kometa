@@ -1,4 +1,6 @@
 import re
+
+from config.config import FF_API_URL, FF_API_KEY
 from modules import util
 from modules.util import Failed, NonExisting
 from modules.request import urlparse
@@ -277,7 +279,9 @@ class Convert:
         return media_id_type, cache_id, imdb_check, expired
 
     def scan_guid(self, guid_str):
-        guid = urlparse(guid_str)
+        # logger.info(f" scan_guid: {guid_str}")
+        modified_guid_str = guid_str.replace('sjva_agent', 'sjva-agent')
+        guid = urlparse(modified_guid_str)
         return guid.scheme.split(".")[-1], guid.netloc
 
     def get_id(self, item, library):
@@ -337,7 +341,30 @@ class Convert:
                 else:
                     raise Failed(f"AniDB ID not found for MyAnimeList ID: {check_id}")
             elif item_type == "local":                      raise NonExisting("No match in Plex")
-            else:                                           raise NonExisting(f"Agent {item_type} not supported")
+            elif item_type == 'sjva-agent':
+                if check_id.startswith('FT') or check_id.startswith('MT'):
+                    id_part = check_id[2:]  # FT, MT 제거
+                    if '-' in id_part:
+                        id_part = id_part.split('-')[0]
+                    try:
+                        tmdb_id.append(int(id_part))
+                    except ValueError:
+                        raise Failed(f"SJVA Agent ID: {check_id} invalid TMDb ID format")
+                elif check_id.startswith('M'):
+                    try:
+                        url = f'{FF_API_URL}/metadata/api/movie/info?code={check_id}&apikey={FF_API_KEY}'
+                        data = self.requests.get(url).json()
+                        # logger.info(f" sjva url data: {data}")
+                        for code in data['code_list']:
+                            if code[0] == 'tmdb_id':
+                                tmdb_id.append(int(code[1]))
+                                break
+                            else:
+                                raise Failed(f"{item.guid} not exist tmdb_id")
+                    except:
+                        raise Failed(f"{item.guid} not supported 1")
+            else:
+                raise Failed(f"{item.guid} not supported 2")
 
             if anidb_id:
                 if anidb_id in self._anidb_to_imdb:
